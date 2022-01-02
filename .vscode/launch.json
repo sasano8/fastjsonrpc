@@ -1,0 +1,29 @@
+{
+  // https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: test",
+      "type": "python",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "-v",
+        "-s",
+      ],
+      "justMyCode": false
+    },
+    // {
+    //   "name": "Python: test one",
+    //   "type": "python",
+    //   "request": "launch",
+    //   "module": "pytest",
+    //   "args": [
+    //     "-v",
+    //     "-s",
+    //     "tests/test_jsonrpc.py::class::method"
+    //   ],
+    //   "justMyCode": false
+    // }
+  ]
+}

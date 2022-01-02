@@ -1,0 +1,13 @@
+all: format-black format-isort test
+
+format: format-black format-isort
+
+format-black:
+	@echo [black] && poetry run black . -v
+	#  --exclude "pnq\/__template__\.py" ".venv"
+
+format-isort:
+	@echo [isort] && poetry run isort --profile black --filter-files .
+
+test:
+	@echo [pytest] && poetry run pytest -svx # exit instantly on first error or failed test.
