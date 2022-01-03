@@ -49,12 +49,74 @@ from fastapi.responses import PlainTextResponse
 from starlette.responses import JSONResponse
 
 
-class NoRenderJSONResponse(JSONResponse):
-    def render(self, content):
-        return content
+class ProxyResponse(JSONResponse):
+    """
+    super().get_route_handler()で処理されたレスポンスをJSONRPCの仕様に従い、idを付与して返したい。
+    デフォルトハンドラーは、結果をオブジェクトをレスポンスに変換する際にバイト表現にしてしまうため、idを付与できない。
+    なので、レスポンス作成時にバイト表現にせずに、idを付与した後にバイト表現にする。
+    また、レスポンス生成時にcontent-lengthを計算しヘッダを生成するため、
+    属性(body)の上書きで対応するとcontent-lengthの不一致になってしまう（uvicornなどレスポンス検証器を通すとエラーが発生）。
+    そのような理由があり、意図が分かりにくいコードになっている。
+    """
 
-    def set_body(self, content):
-        self.body = super().render(content)
+    def __init__(
+        self,
+        content=None,
+        status_code: int = 200,
+        headers: dict = None,
+        media_type: str = None,
+        background=None,
+    ):
+        self.kwargs = {
+            "content": content,
+            "status_code": status_code,
+            "headers": headers,
+            "media_type": media_type,
+            "background": background,
+        }
+        self._extend = None
+        JSONResponse.__init__(self, **self.kwargs)
+
+    def render(self, content) -> bytes:
+        return b""
+
+    def init_headers(self, headers):
+        return {}
+
+    @property
+    def headers(self):
+        return ProxyHeader(self)
+
+    def get_response(self, content):
+        # super().get_route_handler()
+        # ...
+        # response.headers.raw.extend(sub_response.headers.raw)
+        # if sub_response.status_code:
+        #     response.status_code = sub_response.status_code
+        # return response
+        self.kwargs["content"] = content
+        response = JSONResponse(**self.kwargs)
+        if self._extend:
+            response.headers.raw.extend(self._extend)
+
+        response.status_code = self.status_code
+
+        return response
+
+    def get_content(self):
+        return self.kwargs["content"]
+
+
+class ProxyHeader:
+    def __init__(self, proxy_response: ProxyResponse):
+        self.proxy_response = proxy_response
+
+    @property
+    def raw(self):
+        return self
+
+    def extend(self, value):
+        self.proxy_response._extend = value
 
 
 class JsonRpcRoute(APIRoute):
@@ -151,10 +213,10 @@ class JsonRpcRoute(APIRoute):
         original_route_handler = super().get_route_handler()
 
         async def custom_route_handler(request: Request) -> Response:
-            res: NoRenderJSONResponse
+            res: ProxyResponse
             if not request.scope.get("jsonrpc", {}):
                 res = await original_route_handler(request)
-                res.set_body(res.body)
+                res = res.get_response(res.get_content())
                 return res
             else:
                 body: Union[RpcRequest, RpcRequestNotification] = request.scope[
@@ -166,7 +228,9 @@ class JsonRpcRoute(APIRoute):
 
                 try:
                     res = await original_route_handler(request)
-                    res.set_body(RpcResponse(result=res.body, id=body.get_id()).dict())
+                    res = res.get_response(
+                        RpcResponse(result=res.get_content(), id=body.get_id()).dict()
+                    )
                     return res
                 except exceptions.RpcError as e:
                     err = e.to_dict(body.get_id())
@@ -179,6 +243,53 @@ class JsonRpcRoute(APIRoute):
                     return JSONResponse(err)
 
         return custom_route_handler
+
+    # @staticmethod
+    # async def get_response(
+    #     request, dependant, body, dependency_overrides_provider, is_coroutine
+    # ):
+    #     from fastapi.dependencies.utils import solve_dependencies
+    #     from fastapi.routing import run_endpoint_function
+    #     from fastapi.routing import serialize_response
+
+    #     solved_result = await solve_dependencies(
+    #         request=request,
+    #         dependant=dependant,
+    #         body=body,
+    #         dependency_overrides_provider=dependency_overrides_provider,
+    #     )
+    #     values, errors, background_tasks, sub_response, _ = solved_result
+    #     if errors:
+    #         raise RequestValidationError(errors, body=body)
+
+    #     raw_response = await run_endpoint_function(
+    #         dependant=dependant, values=values, is_coroutine=is_coroutine
+    #     )
+    #     response_data = await serialize_response(
+    #         field=response_field,
+    #         response_content=raw_response,
+    #         include=response_model_include,
+    #         exclude=response_model_exclude,
+    #         by_alias=response_model_by_alias,
+    #         exclude_unset=response_model_exclude_unset,
+    #         exclude_defaults=response_model_exclude_defaults,
+    #         exclude_none=response_model_exclude_none,
+    #         is_coroutine=is_coroutine,
+    #     )
+    #     return response_data
+
+    # @staticmethod
+    # async def finalize_response(response_data):
+    #     response_args: Dict[str, Any] = {"background": background_tasks}
+    #     # If status_code was set, use it, otherwise use the default from the
+    #     # response class, in the case of redirect it's 307
+    #     if status_code is not None:
+    #         response_args["status_code"] = status_code
+    #     response = actual_response_class(response_data, **response_args)
+    #     response.headers.raw.extend(sub_response.headers.raw)
+    #     if sub_response.status_code:
+    #         response.status_code = sub_response.status_code
+    #     return response
 
 
 class JsonRpcRouter(PostOnlyRouter):
@@ -193,10 +304,7 @@ class JsonRpcRouter(PostOnlyRouter):
 
         route_cls = self.dispatcher_cls._create_router()
         APIRouter.__init__(
-            self,
-            route_class=route_cls,
-            default_response_class=NoRenderJSONResponse,
-            **kwargs
+            self, route_class=route_cls, default_response_class=ProxyResponse, **kwargs
         )
         APIRouter.post(
             self,

@@ -79,3 +79,9 @@ pre-commit install
 ``` shell
 make
 ```
+
+## running and debugging server
+
+To debug the json rpc server with vscode.
+
+- Run `Python: debug server` from `running and debugging`.

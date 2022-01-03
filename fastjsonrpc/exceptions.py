@@ -75,6 +75,7 @@ class InternalServerError(RpcBaseError):
 
 
 class RpcError(RpcBaseError):
+    # http.status_code = 400
     code = -32000
     message = "An error occured."
     data = None
