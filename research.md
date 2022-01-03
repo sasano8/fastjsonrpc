@@ -1,5 +1,24 @@
+# ルーティング・実行の仕組み
 
-aaaaaaa
+1. APIRouterによってパスマッチングされる
+2. APIRoute.handleでリクエストに対して応答能力を備えているか検証する
+3. request_responseでリクエストが実行される
+4. fastapi.routing.get_request_handlerでpydanticによる検証や依存性解決など独自処理が実行される
+
+# ディスパッチを実現するには
+
+1. APIRouterによってパスがマッチングされる
+2. マッチしたパスがエントリーポイントなら、リクエストのパスを書き換え再度APIRouterにマッチングをお願いする
+3. メソッドにリクエストが届いたら、エントリーポイント経由（フラグを立てておく）ならJSONRPCとして処理し、
+    そうでないなら、単にFastAPIに処理をお願いする。
+
+# バッチ処理を実現するには
+
+
+# ウェブソケットからディスパッチを実現するには
+
+
+# スタックトレース
 
 ``` python
 FastAPI.__call__(self, scope: Scope, receive: Receive, send: Send):
@@ -147,9 +166,9 @@ fastapi.routing.APIRoute
                 raise HTTPException(status_code=405)
             else:
                 response = PlainTextResponse("Method Not Allowed", status_code=405)
-            await response(scope, receive, send) =>>>>>>>>>>>>>>>>>>>
+            await response(scope, receive, send)
         else:
-            await self.app(scope, receive, send)
+            await self.app(scope, receive, send) =>>>>>>>>>>>>>>>>>>>
 
 
 # funcはfastapi.APIRoute.get_route_handlerで取得した関数
@@ -177,17 +196,3 @@ fastapi.routing.get_request_handler
 
 ```
 
-ディスパッチを実現するには
-
-1. ルートのAPIRouterにアクセスする必要がある。
-2. ルートのAPIRouterにアクセスする前にスキーマ検証を終える必要がある
-3. APIRouterの継承改変は公開していない
-4. include_routerでは、FastAPI自身のrouterにapiを追加する、改変したrouterはランタイムで無視される
-5. APIRoute.handleでフックし、scope["router"].__call__で再度呼び出せそう
-
-``` python
-APIRouter
-
-if "router" not in scope:
-    scope["router"] = self
-```
