@@ -16,15 +16,17 @@ pip install git+https://github.com/sasano8/fastjsonrpc.git
 
 # Getting started
 ``` Python
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.testclient import TestClient
 from fastjsonrpc import JsonRpcRouter, RpcError
 from pydantic import BaseModel
 
 rpc = JsonRpcRouter()
 
+
 def get_suffix():
     return "!!!"
+
 
 @rpc.post()
 class Echo(BaseModel):
@@ -33,6 +35,7 @@ class Echo(BaseModel):
     def __call__(self, suffix: str = Depends(get_suffix)):
         return self.msg + suffix
 
+
 @rpc.post()
 class Error(BaseModel):
     msg: str
@@ -40,9 +43,11 @@ class Error(BaseModel):
     def __call__(self):
         raise YourAppError(self.msg)
 
+
 class YourAppError(RpcError):
     code = -32001  # -32001, -32002, ...
     message = "Application exception."
+
 
 app = FastAPI()
 app.include_router(rpc)
@@ -50,20 +55,20 @@ app.include_router(rpc)
 # test
 
 client = TestClient(app)
-res = client.post("/", json={
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "echo",
-    "params": {"msg": "hello"}
-})
+res = client.post(
+    "/", json={"jsonrpc": "2.0", "id": 1, "method": "echo", "params": {"msg": "hello"}}
+)
 assert res.json()["result"] == "hello!!!"
 
-res = client.post("/", json={
-    "jsonrpc": "2.0",
-    "id": 2,
-    "method": "error",
-    "params": {"msg": "test error"}
-})
+res = client.post(
+    "/",
+    json={
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "error",
+        "params": {"msg": "test error"},
+    },
+)
 assert res.json()["error"]["message"] == "Application exception."
 assert res.json()["error"]["data"] == "test error"
 ```
