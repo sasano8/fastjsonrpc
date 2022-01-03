@@ -11,7 +11,7 @@
 # Installation
 
 ``` shell
-pip install xxxxxxxxxxxxxxxxxxxxxxxx
+pip install git+https://github.com/sasano8/fastjsonrpc.git
 ```
 
 # Getting started

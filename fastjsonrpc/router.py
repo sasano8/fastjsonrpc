@@ -9,6 +9,7 @@ from pydantic import BaseModel, parse_obj_as
 
 from . import exceptions
 from .schemas import (
+    RpcEntryPoint,
     RpcRequest,
     RpcRequestBatch,
     RpcRequestNotification,
@@ -144,8 +145,7 @@ class JsonRpcRoute(APIRoute):
             await self.app(scope, receive, send)
             return
 
-        # if not jsonrpc entrypoint
-        if not scope["path"] == "/":
+        if not getattr(self.endpoint, "_is_jsonrpc_entrypoint", False):
             scope["jsonrpc"] = {}
             await self.app(scope, receive, send)
             return
@@ -202,12 +202,6 @@ class JsonRpcRoute(APIRoute):
             scope["path"] += body.method
             await scope["router"].__call__(scope, receive, send)
             return
-
-    @staticmethod
-    def dispatcher(
-        body: Union[RpcRequest, RpcRequestBatch, RpcRequestNotification]
-    ) -> Union[RpcResponse, RpcResponseError]:
-        ...
 
     def get_route_handler(self) -> Callable:
         original_route_handler = super().get_route_handler()
@@ -293,6 +287,7 @@ class JsonRpcRoute(APIRoute):
 
 
 class JsonRpcRouter(PostOnlyRouter):
+    EntryPoint = RpcEntryPoint
     dispatcher_cls = JsonRpcRoute
 
     def __init__(self, **kwargs):
@@ -306,12 +301,13 @@ class JsonRpcRouter(PostOnlyRouter):
         APIRouter.__init__(
             self, route_class=route_cls, default_response_class=ProxyResponse, **kwargs
         )
+
         APIRouter.post(
             self,
             "/",
             status_code=200,
-            response_model=self.dispatcher_cls.dispatcher.__annotations__["return"],
-        )(self.dispatcher_cls.dispatcher)
+            response_model=self.EntryPoint.__call__.__annotations__["return"],
+        )(self.EntryPoint)
         self._methods = route_cls._methods
 
     def include_router(self, router: "JsonRpcRouter", **kwargs):  # type: ignore
@@ -321,6 +317,9 @@ class JsonRpcRouter(PostOnlyRouter):
         if path == "/":
             raise ValueError("Not allow root.")
 
+        return self._post(path=path, **kwargs)
+
+    def _post(self, path=None, **kwargs):
         to_snake_case = get_snake_case_converter()
 
         def wrapper(func_or_basemodel):
@@ -334,14 +333,14 @@ class JsonRpcRouter(PostOnlyRouter):
             else:
                 if path is None:
                     name = to_snake_case(func.__name__)
-                    self._methods[name] = func_or_basemodel
                     path = "/" + name
                 else:
-                    raise NotImplementedError()
+                    name = path[1:]
+
+                self._methods[name] = func_or_basemodel
 
             register = APIRouter.post(self, path=path, **kwargs)
             register(func)
-            # method(func)
             return func_or_basemodel
 
         return wrapper
@@ -351,6 +350,19 @@ if TYPE_CHECKING:
 
     class JsonRpcRouter(APIRouter):  # type: ignore
         ...
+
+
+def get_snake_case_converter():
+    import re
+
+    # return re.sub(r"(?<!^)(?=[A-Z])", "_", val).lower()
+
+    pattern = re.compile(r"(?<!^)(?=[A-Z])")
+
+    def to_snake_case(val: str):
+        return pattern.sub("_", val).lower()
+
+    return to_snake_case
 
 
 def try_get_as_func(cls):
@@ -381,16 +393,3 @@ def try_get_as_func(cls):
 
     else:
         return None
-
-
-def get_snake_case_converter():
-    import re
-
-    # return re.sub(r"(?<!^)(?=[A-Z])", "_", val).lower()
-
-    pattern = re.compile(r"(?<!^)(?=[A-Z])")
-
-    def to_snake_case(val: str):
-        return pattern.sub("_", val).lower()
-
-    return to_snake_case

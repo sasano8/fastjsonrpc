@@ -250,3 +250,47 @@ def test_http_request_success(client):
     )
     assert response.status_code == 200
     assert response.json() == "hello!!!"
+
+
+########################################
+# complex test
+########################################
+def test_include_router_prefix():
+    from fastjsonrpc.schemas import RpcRequest as Req
+
+    rpc_1 = JsonRpcRouter()
+    rpc_2 = JsonRpcRouter()
+
+    @rpc_1.post()
+    class Hello1(BaseModel):
+        def __call__(self):
+            return "hello 1"
+
+    @rpc_2.post()
+    class Hello2(BaseModel):
+        def __call__(self):
+            return "hello 2"
+
+    app = FastAPI()
+    app.include_router(rpc_1, prefix="/rpc_1")
+    app.include_router(rpc_2, prefix="/rpc_2")
+    client = TestClient(app)
+
+    response = client.post(
+        "/rpc_1/",
+        json=Req(method="hello1", id=1).dict(),
+    )
+    assert response.status_code == 200
+    assert response.json()["result"] == "hello 1"
+
+    response = client.post(
+        "/rpc_2/",
+        json=Req(method="hello2", id=1).dict(),
+    )
+    assert response.status_code == 200
+    assert response.json()["result"] == "hello 2"
+
+
+def test_specifiy_path():
+    # TODO: @rpc.post("/echo")
+    assert True

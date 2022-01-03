@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends
+from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 
 from fastjsonrpc import JsonRpcRouter, RpcError
@@ -26,10 +26,16 @@ class Error(BaseModel):
         raise YourAppError(self.msg)
 
 
+@rpc.post()
+class Empty(BaseModel):
+    def __call__(self):
+        return ""
+
+
 class YourAppError(RpcError):
     code = -32001  # -32001, -32002, ...
     message = "Application exception."
 
 
 app = FastAPI()
-app.include_router(rpc)
+app.include_router(rpc, prefix="/jsonrpc")

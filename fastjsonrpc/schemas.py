@@ -82,3 +82,11 @@ class RpcResponseError(BaseModel):
     jsonrpc: str = Field("2.0", const=True)
     error: ErrorInfo
     id: Optional[int] = None
+
+
+class RpcEntryPoint(BaseModel):
+    __root__: Union[RpcRequest, RpcRequestBatch, RpcRequestNotification]
+    _is_jsonrpc_entrypoint: bool = True
+
+    def __call__(self) -> Union[RpcResponse, RpcResponseError]:
+        """jsonrpc entry point."""
