@@ -23,11 +23,14 @@ from pydantic import BaseModel
 
 rpc = JsonRpcRouter()
 
+def get_suffix():
+    return "!!!"
+
 @rpc.post()
 class Echo(BaseModel):
     msg: str
 
-    def __call__(self):
+    def __call__(self, suffix: str = Depends(get_suffix)):
         return self.msg
 
 @rpc.post()

@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from pydantic import BaseModel
 
 from fastjsonrpc import JsonRpcRouter, RpcError
@@ -6,12 +6,16 @@ from fastjsonrpc import JsonRpcRouter, RpcError
 rpc = JsonRpcRouter()
 
 
+def get_suffix():
+    return "!!!"
+
+
 @rpc.post()
 class Echo(BaseModel):
     msg: str = "hello"
 
-    def __call__(self):
-        return self.msg
+    def __call__(self, suffix: str = Depends(get_suffix)):
+        return self.msg + suffix
 
 
 @rpc.post()

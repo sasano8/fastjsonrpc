@@ -20,7 +20,7 @@ class RpcRequest(RpcRequestBase):
         schema_extra = {
             "example": {
                 "jsonrpc": "2.0",
-                "method": "ping",
+                "method": "echo",
                 "params": {"msg": "hello"},
                 "id": 0,
             }
@@ -39,7 +39,7 @@ class RpcRequestNotification(RpcRequestBase):
         schema_extra = {
             "example": {
                 "jsonrpc": "2.0",
-                "method": "ping",
+                "method": "echo",
                 "params": {"msg": "hello"},
             }
         }
@@ -53,13 +53,13 @@ class RpcRequestBatch(RpcRequestBase):
             "example": [
                 {
                     "jsonrpc": "2.0",
-                    "method": "ping",
+                    "method": "echo",
                     "params": {"msg": "hello 1"},
                     "id": 0,
                 },
                 {
                     "jsonrpc": "2.0",
-                    "method": "ping",
+                    "method": "echo",
                     "params": {"msg": "hello 2"},
                 },
             ]

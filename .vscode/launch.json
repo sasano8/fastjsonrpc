@@ -10,7 +10,8 @@
       "args": [
         "sample:app",
         "--reload",
-        "--port 8000"
+        "--port",
+        "8000"
       ],
       "justMyCode": false
     },
