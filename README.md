@@ -31,7 +31,7 @@ class Echo(BaseModel):
     msg: str
 
     def __call__(self, suffix: str = Depends(get_suffix)):
-        return self.msg
+        return self.msg + suffix
 
 @rpc.post()
 class Error(BaseModel):
@@ -56,7 +56,7 @@ res = client.post("/", json={
     "method": "echo",
     "params": {"msg": "hello"}
 })
-assert res.json()["result"] == "hello"
+assert res.json()["result"] == "hello!!!"
 
 res = client.post("/", json={
     "jsonrpc": "2.0",
