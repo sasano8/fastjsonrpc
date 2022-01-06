@@ -50,18 +50,18 @@ class YourAppError(RpcError):
 
 
 app = FastAPI()
-app.include_router(rpc)
+app.include_router(rpc, prefix="/jsonrpc)
 
 # test
 
 client = TestClient(app)
 res = client.post(
-    "/", json={"jsonrpc": "2.0", "id": 1, "method": "echo", "params": {"msg": "hello"}}
+    "/jsonrpc/", json={"jsonrpc": "2.0", "id": 1, "method": "echo", "params": {"msg": "hello"}}
 )
 assert res.json()["result"] == "hello!!!"
 
 res = client.post(
-    "/",
+    "/jsonrpc/",
     json={
         "jsonrpc": "2.0",
         "id": 2,
