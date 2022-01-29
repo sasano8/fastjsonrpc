@@ -13,7 +13,9 @@
   "python.testing.pytestEnabled": true,
   "python.testing.pytestArgs": [
     "-s",
-    "-v",
-    "tests"
-  ]
+    "-vv",
+    "tests",
+    "--log-cli-level=DEBUG"
+  ],
+  "testing.automaticallyOpenPeekView": "never"
 }
