@@ -1,4 +1,4 @@
-name: Run RabbitMQ messaging tests
+name: Run test
 
 on:
   push:

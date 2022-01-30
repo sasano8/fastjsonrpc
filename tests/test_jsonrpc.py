@@ -4,25 +4,58 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from fastjsonrpc import JsonRpcRouter
+from fastjsonrpc.exceptions import (
+    InternalServerError,
+    InvalidParamsError,
+    InvalidRequestError,
+    MethodNotFoundError,
+    ParseError,
+    RpcError,
+)
+from tests import ERR, IGNORE, NOTIFY, OK, REQ, Match, client, sample_app
 
 
 #################################
 # router test
 #################################
-def test_dont_use_prefix():
+def test_not_allow_prefix():
     api = JsonRpcRouter()
 
-    # must be no nest
     with pytest.raises(ValueError, match="must be empty"):
         JsonRpcRouter(prefix="/xxxx")
+
+
+def test_not_allow_include_router():
+    api = JsonRpcRouter()
+
+    with pytest.raises(NotImplementedError):
+        api.include_router(JsonRpcRouter())
 
     with pytest.raises(NotImplementedError):
         api.include_router(JsonRpcRouter(), prefix="/xxx")
 
 
+def test_not_allow_default_response_class():
+    from fastapi.responses import JSONResponse
+
+    assert JsonRpcRouter(default_response_class=None)
+    with pytest.raises(ValueError, match="'default_response_class' is not allowed"):
+        JsonRpcRouter(default_response_class=JSONResponse)
+
+
+def test_not_allow_route_class():
+    from fastapi.routing import APIRoute
+
+    assert JsonRpcRouter(route_class=None)
+    with pytest.raises(ValueError, match="'route_class' is not allowed"):
+        JsonRpcRouter(route_class=APIRoute)
+
+
 def test_not_allow_func():
     def hello():
-        ...
+        ...  # pragma: no cover
+
+    hello()
 
     api = JsonRpcRouter()
     with pytest.raises(NotImplementedError):
@@ -40,6 +73,14 @@ def test_must_be_callable():
             msg: str
 
 
+def test_not_allow_root():
+
+    api = JsonRpcRouter()
+
+    with pytest.raises(ValueError, match="Not allow root."):
+        api.post("/")
+
+
 def test_post_only():
     api = JsonRpcRouter()
 
@@ -47,7 +88,7 @@ def test_post_only():
         msg: str = "hello"
 
         def __call__(self):
-            return self.msg
+            ...  # pragma: no cover
 
     # must be post only
     assert api.post()(Hello)
@@ -67,197 +108,160 @@ def test_post_only():
         assert api.trace()(Hello)
 
 
-#################################
-# client test
-#################################
-@pytest.fixture
-def client():
-    api = JsonRpcRouter()
-
-    @api.post()
-    class Echo(BaseModel):
-        msg: str
-
-        def __call__(self):
-            return self.msg
-
-    @api.post()
-    class Error(BaseModel):
-        msg: str
-
-        def __call__(self):
-            raise Exception(self.msg)
-
-    @api.post()
-    class RpcError(BaseModel):
-        msg: str
-
-        def __call__(self):
-            from fastjsonrpc.exceptions import RpcError
-
-            raise RpcError(self.msg)
-
-    app = FastAPI()
-    app.include_router(api)
-    client = TestClient(app)
-    return client
+def test_error_code():
+    assert ParseError.code == -32700
+    assert InvalidRequestError.code == -32600
+    assert MethodNotFoundError.code == -32601
+    assert InvalidParamsError.code == -32602
+    assert InternalServerError.code == -32603
+    assert RpcError.code == -32000
 
 
 def test_parse_error(client: TestClient):
-    from fastjsonrpc.exceptions import ParseError
-
-    assert ParseError.code == -32700
-
     response = client.post("/", data="")
     assert response.status_code == 200
-    assert response.json() == {
-        "jsonrpc": "2.0",
-        "error": {
-            "code": ParseError.code,
-            "message": "Parse error.",
-            "data": "Expecting value: line 1 column 1 (char 0)",
-        },
-        "id": None,
-    }
-
-
-def test_invalid_error(client: TestClient):
-    from fastjsonrpc.exceptions import InvalidRequestError
-
-    assert InvalidRequestError.code == -32600
-
-    response = client.post("/", json={})
-    assert response.status_code == 200
-    result = response.json()
-    assert result["error"].pop("data")
-    assert result == {
-        "jsonrpc": "2.0",
-        "error": {
-            "code": InvalidRequestError.code,
-            "message": "Invalid Request.",
-            # "data": "...",
-        },
-        "id": None,
-    }
-
-
-def test_method_not_found_error(client: TestClient):
-    from fastjsonrpc.exceptions import MethodNotFoundError
-    from fastjsonrpc.schemas import RpcRequestNotification as Req
-
-    assert MethodNotFoundError.code == -32601
-
-    response = client.post("/", json=Req(method="xxx").dict())
-    assert response.status_code == 200
-    assert response.json() == {
-        "jsonrpc": "2.0",
-        "error": {
-            "code": MethodNotFoundError.code,
-            "message": "Method not found.",
-            "data": None,
-        },
-        "id": None,
-    }
-
-    response = client.post("/", json=Req(method="").dict())
-    assert response.status_code == 200
-    assert response.json()["error"]["code"] == MethodNotFoundError.code
-
-    response = client.post("/", json=Req(method="/").dict())
-    assert response.status_code == 200
-    assert response.json()["error"]["code"] == MethodNotFoundError.code
-
-
-def test_invalid_params_error(client: TestClient):
-    from fastjsonrpc.exceptions import InvalidParamsError
-    from fastjsonrpc.schemas import RpcRequestNotification as Req
-
-    assert InvalidParamsError.code == -32602
-
-    response = client.post("/", json=Req(method="echo", params={}).dict())
-    assert response.status_code == 200
-    result = response.json()
-    assert result["error"].pop("data")
-    assert result == {
-        "jsonrpc": "2.0",
-        "error": {
-            "code": InvalidParamsError.code,
-            "message": "Invalid params.",
-            # "data": "...",
-        },
-        "id": None,
-    }
-
-
-def test_internal_server_error(client: TestClient):
-    from fastjsonrpc.exceptions import InternalServerError
-    from fastjsonrpc.schemas import RpcRequestNotification as Req
-
-    assert InternalServerError.code == -32603
-
-    response = client.post("/", json=Req(method="error", params={"msg": "_"}).dict())
-    assert response.status_code == 200
-    assert response.json() == {
-        "jsonrpc": "2.0",
-        "error": {
-            "code": InternalServerError.code,
-            "message": "Internal Server Error.",
-            "data": None,
-        },
-        "id": None,
-    }
-
-
-def test_rpc_error(client: TestClient):
-    from fastjsonrpc.exceptions import RpcError
-    from fastjsonrpc.schemas import RpcRequestNotification as Req
-
-    assert RpcError.code == -32000
-
-    response = client.post(
-        "/", json=Req(method="rpc_error", params={"msg": "_"}).dict()
+    assert response.json() == ERR(
+        id=None,
+        code=ParseError.code,
+        message="Parse error.",
+        data="Expecting value: line 1 column 1 (char 0)",
     )
+
+    response = client.post("/", data="a")
     assert response.status_code == 200
-    assert response.json() == {
-        "jsonrpc": "2.0",
-        "error": {
-            "code": RpcError.code,
-            "message": "An error occured.",
-            "data": "_",
-        },
-        "id": None,
-    }
-
-
-def test_rpc_request_success(client):
-    from fastjsonrpc.schemas import RpcRequest
-
-    response = client.post(
-        "/", json=RpcRequest(method="echo", params={"msg": "hello!!!"}, id=1).dict()
+    assert response.json() == ERR(
+        id=None,
+        code=ParseError.code,
+        message="Parse error.",
+        data="Expecting value: line 1 column 1 (char 0)",
     )
-    assert response.status_code == 200
-    assert response.json() == {
-        "result": "hello!!!",
-        "id": 1,
-        "jsonrpc": "2.0",
-    }
 
 
-def test_http_request_success(client):
-    response = client.post(
-        "/echo",
-        json={"msg": "hello!!!"},
-    )
+@pytest.mark.parametrize(
+    "req, res",
+    [
+        (
+            {},
+            ERR(
+                id=None,
+                code=InvalidRequestError.code,
+                message="Invalid Request.",
+                data=IGNORE,
+            ),
+        ),
+        (
+            NOTIFY("xxx"),
+            ERR(
+                id=None,
+                code=MethodNotFoundError.code,
+                message="Method not found.",
+                data=None,
+            ),
+        ),
+        (
+            NOTIFY(""),
+            ERR(
+                id=None,
+                code=MethodNotFoundError.code,
+                message=MethodNotFoundError.message,
+                data=None,
+            ),
+        ),
+        (
+            NOTIFY("/"),
+            ERR(
+                id=None,
+                code=MethodNotFoundError.code,
+                message=MethodNotFoundError.message,
+                data=None,
+            ),
+        ),
+        # FIXME: METHOD NOT FOUNDが返るはずが返らない
+        # assert response.status_code == 200
+        # assert response.json() == ERR(
+        #     id=None, code=MethodNotFoundError.code, message="Method not found.", data=IGNORE
+        # )
+        (
+            NOTIFY("echo"),
+            ERR(
+                id=None,
+                code=InvalidParamsError.code,
+                message=InvalidParamsError.message,
+                data=Match("msg.*field.*required", to_str=True),
+            ),
+        ),
+    ],
+)
+def test_invalid_request(client: TestClient, req, res):
+
+    response = client.post("/", json=req)
     assert response.status_code == 200
-    assert response.json() == "hello!!!"
+    assert response.json() == res
+
+
+@pytest.mark.parametrize(
+    "req, res, exc",
+    [
+        (REQ("echo", {"msg": "hello!!!"}, id=1), OK(id=1, result="hello!!!"), None),
+        (
+            NOTIFY("error", {"msg": "_"}),
+            ERR(
+                id=None,
+                code=InternalServerError.code,
+                message=InternalServerError.message,
+                data=None,
+            ),
+            Exception("_"),
+        ),
+        (
+            NOTIFY("rpc_error", {"msg": "_"}),
+            ERR(
+                id=None,
+                code=RpcError.code,
+                message=RpcError.message,
+                data="_",
+            ),
+            RpcError("_"),
+        ),
+    ],
+)
+def test_valid_request(sample_app, req, res, exc):
+    client = TestClient(sample_app, raise_server_exceptions=True)
+    client2 = TestClient(sample_app, raise_server_exceptions=False)
+
+    # jsonrpc request
+    response = client2.post("/", json=req)
+    assert response.status_code == 200
+    assert response.json() == res
+
+    # direct request
+    if "result" in res:
+        response = client2.post("/" + req["method"], json=req["params"])
+        assert response.status_code == 200
+        assert response.json() == res["result"]
+
+        response = client.post("/" + req["method"], json=req["params"])
+        assert response.status_code == 200
+        assert response.json() == res["result"]
+
+    elif "error" in res:
+        method = "/" + req["method"]
+        params = req["params"]
+
+        response = client2.post(method, json=params)
+        assert response.status_code == 500  # TODO: 500以外も返せるようにする
+
+        with pytest.raises(exc.__class__, match=str(exc)):
+            response = client.post(method, json=params)
+
+    else:
+        raise Exception()  # pragma: no cover
 
 
 ########################################
 # complex test
 ########################################
 def test_include_router_prefix():
-    from fastjsonrpc.schemas import RpcRequest as Req
-
     rpc_1 = JsonRpcRouter()
     rpc_2 = JsonRpcRouter()
 
@@ -278,17 +282,17 @@ def test_include_router_prefix():
 
     response = client.post(
         "/rpc_1/",
-        json=Req(method="hello1", id=1).dict(),
+        json=REQ("hello1", {}, id=1),
     )
     assert response.status_code == 200
-    assert response.json()["result"] == "hello 1"
+    assert response.json() == OK(id=1, result="hello 1")
 
     response = client.post(
         "/rpc_2/",
-        json=Req(method="hello2", id=1).dict(),
+        json=REQ("hello2", {}, id=1),
     )
     assert response.status_code == 200
-    assert response.json()["result"] == "hello 2"
+    assert response.json() == OK(id=1, result="hello 2")
 
 
 def test_specifiy_path():

@@ -21,8 +21,9 @@
       "request": "launch",
       "module": "pytest",
       "args": [
-        "-v",
+        "-vv",
         "-s",
+        "--log-cli-level=DEBUG"
       ],
       "justMyCode": false
     },
@@ -34,17 +35,5 @@
       "console": "integratedTerminal",
       "justMyCode": false
     }
-    // {
-    //   "name": "Python: test one",
-    //   "type": "python",
-    //   "request": "launch",
-    //   "module": "pytest",
-    //   "args": [
-    //     "-v",
-    //     "-s",
-    //     "tests/test_jsonrpc.py::class::method"
-    //   ],
-    //   "justMyCode": false
-    // }
   ]
 }

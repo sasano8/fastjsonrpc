@@ -1,6 +1,6 @@
 from typing import Any, List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 
 class RpcRequestBase(BaseModel):
@@ -10,8 +10,17 @@ class RpcRequestBase(BaseModel):
 class RpcRequest(RpcRequestBase):
     jsonrpc: str = Field("2.0", const=True)
     method: str
-    params: Union[list, dict] = {}
+    params: Optional[Union[list, dict]] = {}
     id: int
+
+    @validator("method")
+    def is_not_empty(cls, v):
+        if v == "":
+            from .exceptions import MethodNotFoundError
+
+            raise MethodNotFoundError()
+        else:
+            return v
 
     def get_id(self):
         return self.id
@@ -22,7 +31,7 @@ class RpcRequest(RpcRequestBase):
                 "jsonrpc": "2.0",
                 "method": "echo",
                 "params": {"msg": "hello"},
-                "id": 0,
+                "id": 1,
             }
         }
 
@@ -30,7 +39,16 @@ class RpcRequest(RpcRequestBase):
 class RpcRequestNotification(RpcRequestBase):
     jsonrpc: str = Field("2.0", const=True)
     method: str
-    params: Union[list, dict] = {}
+    params: Optional[Union[list, dict]] = {}
+
+    @validator("method")
+    def is_not_empty(cls, v):
+        if v == "":
+            from .exceptions import MethodNotFoundError
+
+            raise MethodNotFoundError()
+        else:
+            return v
 
     def get_id(self):
         return None

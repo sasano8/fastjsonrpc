@@ -11,3 +11,6 @@ format-isort:
 
 test:
 	@echo [pytest] && poetry run pytest -svx # exit instantly on first error or failed test.
+
+test-report:
+	@echo [pytest] && poetry run pytest -svx --cov # exit instantly on first error or failed test.

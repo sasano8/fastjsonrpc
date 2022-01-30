@@ -27,9 +27,6 @@ class RpcBaseError(Exception):
     def to_dict(self, id=None):
         return self.to_pydantic(id=id).dict()
 
-    def to_json(self, id=None):
-        return self.to_pydantic(id=id).json()
-
 
 class NoInit:
     def __init__(self):
