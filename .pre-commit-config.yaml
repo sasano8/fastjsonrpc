@@ -28,7 +28,7 @@ repos:
   - repo: local
     hooks:
       - id: format
-        name: isort
+        name: format
         entry: make format
         language: system
         types: [python]
