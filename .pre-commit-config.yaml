@@ -8,10 +8,10 @@ repos:
   #   rev: v1.1.6
   #   hooks:
   #     - id: forbid-tabs
-  - repo: https://github.com/psf/black
-    rev: 20.8b0
-    hooks:
-      - id: black
+  # - repo: https://github.com/psf/black
+  #   rev: 20.8b0
+  #   hooks:
+  #     - id: black
   # - repo: https://github.com/pre-commit/mirrors-mypy
   #   rev: "v0.700"
   #   hooks:
@@ -25,3 +25,10 @@ repos:
   #       language: system
   #       entry: poetry run flake8
   #       types: [python]
+  - repo: local
+    hooks:
+      - id: format
+        name: isort
+        entry: make format
+        language: system
+        types: [python]
