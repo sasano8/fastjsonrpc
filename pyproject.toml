@@ -23,6 +23,7 @@ pytest = "^6.2.2"
 requests = "^2.26.0"
 websockets = "^10.1"
 uvicorn = "^0.16.0"
+pytest-cov = "^3.0.0"
 
 [build-system]
 requires = ["poetry>=0.12"]

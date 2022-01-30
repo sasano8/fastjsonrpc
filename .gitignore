@@ -9,3 +9,7 @@ __pycache__
 .hypothesis
 *.db
 .python-version
+
+# pytest-cov
+.coverage
+htmlcov
