@@ -3,11 +3,7 @@ from typing import Union
 
 from starlette.websockets import WebSocket
 
-from fastjsonrpc.schemas import (
-    RpcResponse,
-    RpcResponseError,
-)
-
+from fastjsonrpc.schemas import RpcResponse, RpcResponseError
 
 config = {
     "jsonrpc_route": "jsonrpc_route",

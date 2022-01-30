@@ -1,6 +1,6 @@
 # pragma: no cover
 
-from fastapi import Depends, FastAPI, WebSocket, Request
+from fastapi import Depends, FastAPI, Request, WebSocket
 from pydantic import BaseModel
 
 from fastjsonrpc import JsonRpcRouter, RpcError

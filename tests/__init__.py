@@ -1,8 +1,9 @@
+from functools import wraps
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
-from functools import wraps
 
 from fastjsonrpc import JsonRpcRouter
 

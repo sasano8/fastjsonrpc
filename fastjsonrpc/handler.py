@@ -1,12 +1,6 @@
 import asyncio
 import json
-from typing import (
-    Any,
-    Dict,
-    Optional,
-    Type,
-    Union,
-)
+from typing import Any, Dict, Optional, Type, Union
 
 from fastapi import params
 from fastapi.datastructures import Default, DefaultPlaceholder

@@ -1,4 +1,5 @@
 import pytest
+
 from fastjsonrpc.localclient import LocalClient
 from tests import as_async
 
