@@ -1,13 +1,27 @@
+import asyncio
 import json
-from typing import TYPE_CHECKING, Callable, Union
+import logging
+from asyncio.log import logger
+from sys import prefix
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional, Union
+from urllib import response
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response, background
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, parse_obj_as
+from pydantic.error_wrappers import ErrorWrapper
+from starlette.websockets import WebSocket
 
 from . import exceptions
+from .handler import (
+    DispatchRequest,
+    JsonRpcFutre,
+    JsonRpcRequest,
+    LocalResponse,
+    get_request_handler,
+)
 from .schemas import (
     RpcEntryPoint,
     RpcRequest,
@@ -16,6 +30,11 @@ from .schemas import (
     RpcResponse,
     RpcResponseError,
 )
+from .websocket import JsonRpcWebSocket
+
+logger = logging.getLogger(__name__)
+logger.setLevel("DEBUG")
+
 
 # https://fastapi.tiangolo.com/advanced/custom-request-and-route/
 
@@ -50,74 +69,23 @@ from fastapi.responses import PlainTextResponse
 from starlette.responses import JSONResponse
 
 
-class ProxyResponse(JSONResponse):
-    """
-    super().get_route_handler()で処理されたレスポンスをJSONRPCの仕様に従い、idを付与して返したい。
-    デフォルトハンドラーは、結果をオブジェクトをレスポンスに変換する際にバイト表現にしてしまうため、idを付与できない。
-    なので、レスポンス作成時にバイト表現にせずに、idを付与した後にバイト表現にする。
-    また、レスポンス生成時にcontent-lengthを計算しヘッダを生成するため、
-    属性(body)の上書きで対応するとcontent-lengthの不一致になってしまう（uvicornなどレスポンス検証器を通すとエラーが発生）。
-    そのような理由があり、意図が分かりにくいコードになっている。
-    """
-
+class LazyJSONResponse(JSONResponse):
     def __init__(
         self,
-        content=None,
+        content: Any = None,
         status_code: int = 200,
         headers: dict = None,
         media_type: str = None,
         background=None,
-    ):
-        self.kwargs = {
-            "content": content,
-            "status_code": status_code,
-            "headers": headers,
-            "media_type": media_type,
-            "background": background,
-        }
-        self._extend = None
-        JSONResponse.__init__(self, **self.kwargs)
-
-    def render(self, content) -> bytes:
-        return b""
-
-    def init_headers(self, headers):
-        return {}
-
-    @property
-    def headers(self):
-        return ProxyHeader(self)
-
-    def get_response(self, content):
-        # super().get_route_handler()
-        # ...
-        # response.headers.raw.extend(sub_response.headers.raw)
-        # if sub_response.status_code:
-        #     response.status_code = sub_response.status_code
-        # return response
-        self.kwargs["content"] = content
-        response = JSONResponse(**self.kwargs)
-        if self._extend:
-            response.headers.raw.extend(self._extend)
-
-        response.status_code = self.status_code
-
-        return response
-
-    def get_content(self):
-        return self.kwargs["content"]
-
-
-class ProxyHeader:
-    def __init__(self, proxy_response: ProxyResponse):
-        self.proxy_response = proxy_response
-
-    @property
-    def raw(self):
-        return self
-
-    def extend(self, value):
-        self.proxy_response._extend = value
+    ) -> None:
+        super().__init__(
+            content=content,
+            status_code=status_code,
+            headers=headers,
+            media_type=media_type,
+            background=background,
+        )
+        self.content = content
 
 
 class JsonRpcRoute(APIRoute):
@@ -145,179 +113,160 @@ class JsonRpcRoute(APIRoute):
             await self.app(scope, receive, send)
             return
 
-        if not getattr(self.endpoint, "_is_jsonrpc_entrypoint", False):
-            scope["jsonrpc"] = {}
+        dispacher = DispatchRequest(scope, receive, send)
+        dispacher.set_default_mode("http")
+
+        # if direct rpc request
+        if not hasattr(self.endpoint, "_is_jsonrpc_entrypoint"):
             await self.app(scope, receive, send)
             return
 
-        req = Request(scope, receive, send)
+        rpc = None
+        err = None
 
         try:
-            body = await req.body()
+            rpc = JsonRpcRequest(scope, receive, send)
+            await rpc.validate(self._methods)
+
+            if rpc.is_batch:
+                raise NotImplementedError()
+
+            # pathを書き換えて再度ルーティングをし直す
+            dispacher.rerouting(
+                entrypath=scope["path"], path=scope["path"] + rpc.method
+            )
+            future = JsonRpcFutre(rpc)
+            await scope["router"].__call__(scope, receive, future)
+            await future.send_rpc_response(scope, receive, send)
+            return
+
+        except RequestValidationError as e:
+            err = exceptions.InvalidParamsError(e.errors())
+
+        except exceptions.RpcBaseError as e:
+            err = e
+
         except Exception as e:
-            response = JSONResponse(exceptions.InternalServerError(), status_code=200)
+            import sys
+            import traceback
+
+            # starletteなど関数を実行した場所からの例外と認識してしまうため
+            # 本当の例外発生元を取得
+            original_tb = e.__traceback__.tb_next.tb_next.tb_next.tb_next
+            logger.critical(f"{type(e)} {str(e)}: {str(original_tb.tb_frame)}")
+            err = exceptions.InternalServerError(str(e))
+
+        if err:
+            response = JSONResponse(err.to_dict(), status_code=200)
             await response(scope, receive, send)
             return
 
-        try:
-            body = json.loads(body)
-        except Exception as e:
-            response = JSONResponse(
-                exceptions.ParseError(str(e)).to_dict(), status_code=200
-            )
-            await response(scope, receive, send)
-            return
-
-        try:
-            body = parse_obj_as(
-                Union[RpcRequest, RpcRequestNotification, RpcRequestBatch], body
-            )
-        except Exception as e:
-            response = JSONResponse(
-                exceptions.InvalidRequestError(str(e)).to_dict(),
-                status_code=200,
-            )
-            await response(scope, receive, send)
-            return
-
-        if isinstance(body, RpcRequestBatch):
-            response = JSONResponse(
-                exceptions.InternalServerError(
-                    "Not implement batch request."
-                ).to_dict(),
-                status_code=200,
-            )
-            await response(scope, receive, send)
-            return
-        else:
-            if body.method not in self._methods:
-                response = JSONResponse(
-                    exceptions.MethodNotFoundError().to_dict(body.get_id()),
-                    status_code=200,
-                )
-                await response(scope, receive, send)
-                return
-
-            scope["jsonrpc"] = {"entry_path": scope["path"], "body": body}
-            scope["path"] += body.method
-            await scope["router"].__call__(scope, receive, send)
-            return
-
-    def get_route_handler(self) -> Callable:
-        original_route_handler = super().get_route_handler()
-
+    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+        jsonalize, invork, create_http_response = get_request_handler(
+            dependant=self.dependant,
+            body_field=self.body_field,
+            status_code=self.status_code,
+            response_class=self.response_class,
+            response_field=self.secure_cloned_response_field,
+            response_model_include=self.response_model_include,
+            response_model_exclude=self.response_model_exclude,
+            response_model_by_alias=self.response_model_by_alias,
+            response_model_exclude_unset=self.response_model_exclude_unset,
+            response_model_exclude_defaults=self.response_model_exclude_defaults,
+            response_model_exclude_none=self.response_model_exclude_none,
+            dependency_overrides_provider=self.dependency_overrides_provider,
+        )
+        # return app
         async def custom_route_handler(request: Request) -> Response:
-            res: ProxyResponse
-            if not request.scope.get("jsonrpc", {}):
-                res = await original_route_handler(request)
-                res = res.get_response(res.get_content())
-                return res
+            """
+            このハンドラにリクエストが届くケースは次の通り。
+            1. [direct]jsonrpcのエントリポイント経由でmethodのエンドポイントにリクエストが投げられた
+            2. [indirect]methodのエンドポイントに直接リクエストが投げられた
+            3. [indirect]jsonrpcのエントリポイント経由でmethodのエンドポイントにリクエストが投げられた、
+               かつ、httpレスポンスでなく直接結果を受け取りたい（ローカルリクエスト）
+            """
+
+            """
+            レスポンスが作成されると次のようにレスポンスを送信する。
+            await response(scope, receive, send)
+
+            responseとsendを独自クラスにだましてやればいい
+            """
+
+            request = JsonRpcRequest(request)
+            dispacher = DispatchRequest(request)
+
+            raw_response, background_tasks, sub_response = await invork(request)
+
+            if dispacher.is_direct:
+                jsonalized = await jsonalize(raw_response)
+                response = create_http_response(
+                    jsonalized, background_tasks, sub_response
+                )
             else:
-                body: Union[RpcRequest, RpcRequestNotification] = request.scope[
-                    "jsonrpc"
-                ]["body"]
+                response = LocalResponse(
+                    raw_response,
+                    background_tasks,
+                    sub_response,
+                    jsonalize,
+                    create_http_response,
+                )
 
-                request._body = json.dumps(body.params).encode("utf-8")
-                request._json = body.params
-
-                try:
-                    res = await original_route_handler(request)
-                    res = res.get_response(
-                        RpcResponse(result=res.get_content(), id=body.get_id()).dict()
-                    )
-                    return res
-                except exceptions.RpcError as e:
-                    err = e.to_dict(body.get_id())
-                    return JSONResponse(err)
-                except RequestValidationError as e:
-                    err = exceptions.InvalidParamsError(str(e)).to_dict(body.get_id())
-                    return JSONResponse(err)
-                except Exception as e:
-                    err = exceptions.InternalServerError(str(e)).to_dict(body.get_id())
-                    return JSONResponse(err)
+            return response
 
         return custom_route_handler
-
-    # @staticmethod
-    # async def get_response(
-    #     request, dependant, body, dependency_overrides_provider, is_coroutine
-    # ):
-    #     from fastapi.dependencies.utils import solve_dependencies
-    #     from fastapi.routing import run_endpoint_function
-    #     from fastapi.routing import serialize_response
-
-    #     solved_result = await solve_dependencies(
-    #         request=request,
-    #         dependant=dependant,
-    #         body=body,
-    #         dependency_overrides_provider=dependency_overrides_provider,
-    #     )
-    #     values, errors, background_tasks, sub_response, _ = solved_result
-    #     if errors:
-    #         raise RequestValidationError(errors, body=body)
-
-    #     raw_response = await run_endpoint_function(
-    #         dependant=dependant, values=values, is_coroutine=is_coroutine
-    #     )
-    #     response_data = await serialize_response(
-    #         field=response_field,
-    #         response_content=raw_response,
-    #         include=response_model_include,
-    #         exclude=response_model_exclude,
-    #         by_alias=response_model_by_alias,
-    #         exclude_unset=response_model_exclude_unset,
-    #         exclude_defaults=response_model_exclude_defaults,
-    #         exclude_none=response_model_exclude_none,
-    #         is_coroutine=is_coroutine,
-    #     )
-    #     return response_data
-
-    # @staticmethod
-    # async def finalize_response(response_data):
-    #     response_args: Dict[str, Any] = {"background": background_tasks}
-    #     # If status_code was set, use it, otherwise use the default from the
-    #     # response class, in the case of redirect it's 307
-    #     if status_code is not None:
-    #         response_args["status_code"] = status_code
-    #     response = actual_response_class(response_data, **response_args)
-    #     response.headers.raw.extend(sub_response.headers.raw)
-    #     if sub_response.status_code:
-    #         response.status_code = sub_response.status_code
-    #     return response
 
 
 class JsonRpcRouter(PostOnlyRouter):
     EntryPoint = RpcEntryPoint
     dispatcher_cls = JsonRpcRoute
+    RESPONSE_CLASS = LazyJSONResponse
+    # RESPONSE_CLASS = ProxyResponse
 
-    def __init__(self, **kwargs):
-        if kwargs.get("prefix", "") != "":
-            raise ValueError("must be empty.")
+    if not TYPE_CHECKING:
 
-        if kwargs.get("default_response_class", "") != "":
-            raise ValueError("must be empty.")
+        def __init__(
+            self, prefix="", default_response_class=None, route_class=None, **kwargs
+        ):
+            # if kwargs.get("prefix", "") != "":
+            #     raise ValueError("must be empty.")
+            if prefix != "":
+                raise ValueError("'prefix' must be empty.")
 
-        route_cls = self.dispatcher_cls._create_router()
-        APIRouter.__init__(
-            self, route_class=route_cls, default_response_class=ProxyResponse, **kwargs
-        )
+            if default_response_class is not None:
+                raise ValueError(
+                    "'default_response_class' is not allowed with jsonrpc router."
+                )
 
-        APIRouter.post(
-            self,
-            "/",
-            status_code=200,
-            response_model=self.EntryPoint.__call__.__annotations__["return"],
-        )(self.EntryPoint)
-        self._methods = route_cls._methods
+            if route_class is not None:
+                raise ValueError("'route_class' is not allowed with jsonrpc router.")
+
+            route_cls = self.dispatcher_cls._create_router()
+            APIRouter.__init__(
+                self,
+                route_class=route_cls,
+                default_response_class=self.RESPONSE_CLASS,
+                **kwargs,
+            )
+
+            APIRouter.post(
+                self,
+                "/",
+                status_code=200,
+                response_model=self.EntryPoint.__call__.__annotations__["return"],
+            )(self.EntryPoint)
+            self._methods = route_cls._methods
 
     def include_router(self, router: "JsonRpcRouter", **kwargs):  # type: ignore
         raise NotImplementedError()
 
-    def post(self, path=None, **kwargs):
-        if path == "/":
-            raise ValueError("Not allow root.")
+    if not TYPE_CHECKING:
 
-        return self._post(path=path, **kwargs)
+        def post(self, path=None, **kwargs):
+            if path == "/":
+                raise ValueError("Not allow root.")
+
+            return self._post(path=path, **kwargs)
 
     def _post(self, path=None, **kwargs):
         to_snake_case = get_snake_case_converter()
@@ -345,11 +294,28 @@ class JsonRpcRouter(PostOnlyRouter):
 
         return wrapper
 
+    def filter_entrypoint(self, router):
+        entrypoint = self.routes[0]
 
-if TYPE_CHECKING:
+        def filter_jsonrpc_router(route):
+            return entrypoint.__class__ is route.__class__
 
-    class JsonRpcRouter(APIRouter):  # type: ignore
-        ...
+        return list(filter(filter_jsonrpc_router, router.routes))
+
+    def get_websocket(self, websocket: WebSocket):
+        entrypoint = self.filter_entrypoint(websocket["router"])[0]
+        path = entrypoint.path.split("/")[1:-1]
+        entrypoint_path = "/" + "/".join(path) + "/"
+
+        ws = JsonRpcWebSocket(websocket.scope, websocket.receive, websocket.send)
+        ws._set_entrypoint_path(websocket.scope["app"], entrypoint_path)
+        return ws
+
+
+# if TYPE_CHECKING:
+
+#     class JsonRpcRouter(APIRouter):  # type: ignore
+#         ...
 
 
 def get_snake_case_converter():

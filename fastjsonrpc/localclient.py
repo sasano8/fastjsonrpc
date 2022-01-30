@@ -50,6 +50,7 @@ class LocalClient:
 
         scope: dict = {
             "type": "http",
+            "local": True,
             "headers": {},
             "method": p.method,
             "path": parsed_url.path,
@@ -60,8 +61,12 @@ class LocalClient:
         async def execute():
             result = []
 
-            async def recieve(*args, **kwargs):
-                raise NotImplementedError()
+            async def recieve():
+                return {
+                    "type": "http.request",
+                    "more_body": False,
+                    "body": p.body.encode("utf8") if p.body else b"",
+                }
 
             async def send(msg):
                 result.append(msg)

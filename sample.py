@@ -1,9 +1,33 @@
-from fastapi import Depends, FastAPI
+# pragma: no cover
+
+from fastapi import Depends, FastAPI, WebSocket, Request
 from pydantic import BaseModel
 
 from fastjsonrpc import JsonRpcRouter, RpcError
 
 rpc = JsonRpcRouter()
+
+
+@rpc.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    while True:
+        import asyncio
+
+        global rpc
+        rpc = rpc.get_websocket(websocket)
+
+        while True:
+            res = await rpc.post(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "echo",
+                    "params": {"msg": "hello"},
+                    "id": 0,
+                }
+            )
+            await websocket.send_json(res)
+            await asyncio.sleep(1)
 
 
 def get_suffix():
@@ -41,9 +65,7 @@ app = FastAPI()
 app.include_router(rpc, prefix="/jsonrpc")
 
 
-from fastapi import WebSocket
 from fastapi.responses import HTMLResponse
-
 
 html = """
 <!DOCTYPE html>
@@ -60,7 +82,7 @@ html = """
         <ul id='messages'>
         </ul>
         <script>
-            var ws = new WebSocket("ws://localhost:8000/ws");
+            var ws = new WebSocket("%(ws_endpoint)s");
             ws.onmessage = function(event) {
                 var messages = document.getElementById('messages')
                 var message = document.createElement('li')
@@ -80,26 +102,8 @@ html = """
 """
 
 
-@app.get("/")
-async def get():
-    return HTMLResponse(html)
-
-
-def get_hello():
-    return "hello"
-
-
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, text: str = Depends(get_hello)):
-    await websocket.accept()
-    await websocket.send_text(text)
-    while True:
-        data = await websocket.receive_text()
-        await websocket.send_text(f"Message text was: {data}")
-
-    """
-    state
-        "_state"への参照を設定すれば、websocketの状態をディスパッチ先のメソッドに連携できる
-        if not hasattr(self, "_state"):
-            self._state = State(self.scope["state"])
-    """
+@app.get("/", response_class=HTMLResponse)
+async def get(request: Request):
+    url = request.base_url
+    _ = html % {"ws_endpoint": "ws://localhost:8000/jsonrpc/ws"}
+    return _
