@@ -4,7 +4,6 @@ format: format-black format-isort
 
 format-black:
 	@echo [black] && poetry run black . -v
-	#  --exclude "pnq\/__template__\.py" ".venv"
 
 format-isort:
 	@echo [isort] && poetry run isort --profile black --filter-files .

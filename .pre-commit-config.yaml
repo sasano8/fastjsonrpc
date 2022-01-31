@@ -30,5 +30,5 @@ repos:
       - id: format
         name: format
         entry: make format
-        language: system
-        types: [python]
+        language: system # system -> The tools need to be installed locally
+        types: [python] # file type
