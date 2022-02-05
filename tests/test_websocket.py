@@ -1,9 +1,6 @@
 import json
-from functools import wraps
 
-import pytest
 from fastapi.testclient import TestClient
-from pydantic import Json
 
 from fastjsonrpc.exceptions import (
     InternalServerError,
@@ -14,7 +11,6 @@ from fastjsonrpc.exceptions import (
     RpcBaseError,
     RpcError,
 )
-from fastjsonrpc.schemas import RpcRequest, RpcRequestBatch, RpcRequestNotification
 from fastjsonrpc.websocket import JsonRpcWebSocket
 from tests import ERR, IGNORE, OK, REQ, _sample_app, as_async
 

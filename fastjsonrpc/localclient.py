@@ -62,11 +62,12 @@ class LocalClient:
 
     @staticmethod
     def _init_scope(scope: Optional[dict] = None):
+        # cookiesはheadersに設定されている
         if scope is not None:
-            copied = include_keys(scope, {"cookies", "headers", "state"})
+            copied = include_keys(scope, {"headers", "state"})
             return copied
-
-        return {"query_string": b"", "headers": []}
+        else:
+            return {"headers": [], "state": {}}
 
     def _create_request(self, method: str, url: str, kwargs):
         if not url.startswith("/"):

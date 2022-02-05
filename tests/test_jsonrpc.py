@@ -298,3 +298,12 @@ def test_include_router_prefix():
 def test_specifiy_path():
     # TODO: @rpc.post("/echo")
     assert True
+
+
+def test_headers():
+    # TODO: test headers
+    ...
+
+
+def test_cookies():
+    ...
