@@ -174,46 +174,19 @@ class CopyRequest(Request):
 class DispatchRequest(CopyRequest):
     @property
     def _info(self):
-        self.scope.setdefault("_dispatcher", {})
-        return self.scope["_dispatcher"]
-
-    @property
-    def rerouted(self):
-        return "_dispatcher" in self.scope
-
-    def rerouting(self, entrypath, path):
-        info: dict = self._info
-        if "rerouting" in info:
-            raise RuntimeError("Already rerouting.")
-
-        info.update(rerouting=True, type="indirect", mode="http", entrypath=entrypath)
-        self.scope["path"] = path
-
-    @staticmethod
-    async def sender(msg):
-        ...
+        return self.scope.setdefault("_dispatcher", {})
 
     @property
     def is_direct(self):
-        return not self._info.get("rerouting", False)
+        return not self._info.setdefault("rerouting", False)
 
-    @property
-    def is_http(self):
-        return self._info["mode"] == "http"
+    def rerouting(self, entrypath, path):
+        info: dict = self._info
+        if not self.is_direct:
+            raise RuntimeError("Already rerouting.")
 
-    @property
-    def is_local(self):
-        return self._info["mode"] == "local"
-
-    def to_http_request(self):
-        self._info["mode"] = "http"
-
-    def to_local_request(self):
-        self._info["mode"] = "local"
-
-    def set_default_mode(self, mode):
-        if "mode" not in self._info:
-            self._info["mode"] = mode
+        info.update(rerouting=True, entrypath=entrypath)
+        self.scope["path"] = path
 
 
 class JsonRpcRequest(CopyRequest):

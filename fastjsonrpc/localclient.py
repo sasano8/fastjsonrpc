@@ -1,14 +1,41 @@
-from typing import List
+from typing import List, Optional, Set
 
 import requests
+from requests import PreparedRequest
 from starlette.types import Message
+
+
+def include_keys(dic: dict, keys: Set[str] = set()):
+    copied = {}
+    for key in keys:
+        if key in dic:
+            copied[key] = dic[key]
+    return copied
+
+
+def exclude_keys(dic: dict, keys: Set[str] = set()):
+    copied = dic.copy()
+    for key in keys:
+        dic.pop(key, None)
+    return copied
 
 
 class LocalClient:
     """Call ASGI application without going through ASGI application server."""
 
-    def __init__(self, asgi):
+    def __init__(self, asgi, scope=None, send=None, receive=None):
         self.app = asgi
+        self.scope = self._init_scope(scope)
+        self.send = send
+        self.receive = receive
+
+    @classmethod
+    def from_asgi(cls, asgi):
+        return cls(asgi)
+
+    @classmethod
+    def from_scope(cls, scope, send, receive):
+        return cls(scope["app"], scope, send, receive)
 
     # def create_scope(self):
 
@@ -33,30 +60,46 @@ class LocalClient:
     #         ],
     #     }
 
-    async def call(self, method: str, url: str, **kwargs) -> List[Message]:
+    @staticmethod
+    def _init_scope(scope: Optional[dict] = None):
+        if scope is not None:
+            copied = include_keys(scope, {"cookies", "headers", "state"})
+            return copied
+
+        return {"query_string": b"", "headers": []}
+
+    def _create_request(self, method: str, url: str, kwargs):
         if not url.startswith("/"):
             raise ValueError("Must be first /.")
 
         url = "http://localhost" + url
         req = requests.Request(method, url, **kwargs)
-        p = req.prepare()
+        request = req.prepare()
+        return request
 
+    def _create_scope(self, request: PreparedRequest):
         import urllib.parse
 
-        parsed_url = urllib.parse.urlparse(p.path_url)
-
-        # p.url = http://testclient/?name=bob
-        # p.path_url = /?name=bob
-
+        parsed_url = urllib.parse.urlparse(request.path_url)
         scope: dict = {
             "type": "http",
-            "local": True,
-            "headers": {},
-            "method": p.method,
+            "headers": [],
+            "method": request.method,
             "path": parsed_url.path,
             "query_string": parsed_url.query,
             "scheme": parsed_url.scheme,
         }
+        return scope
+
+    async def call_in_context(self, method: str, url: str, **kwargs) -> List[Message]:
+        request = self._create_request(method, url, kwargs)
+        scope = self._create_scope(request)
+        scope.update(self.scope)  # 現在のscopeを継承する
+        return []
+
+    async def call(self, method: str, url: str, **kwargs) -> List[Message]:
+        request = self._create_request(method, url, kwargs)
+        scope = self._create_scope(request)
 
         async def execute():
             result = []
@@ -65,7 +108,7 @@ class LocalClient:
                 return {
                     "type": "http.request",
                     "more_body": False,
-                    "body": p.body.encode("utf8") if p.body else b"",
+                    "body": request.body.encode("utf8") if request.body else b"",
                 }
 
             async def send(msg):

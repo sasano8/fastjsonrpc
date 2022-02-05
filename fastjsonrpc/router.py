@@ -114,7 +114,6 @@ class JsonRpcRoute(APIRoute):
             return
 
         dispacher = DispatchRequest(scope, receive, send)
-        dispacher.set_default_mode("http")
 
         # if direct rpc request
         if not hasattr(self.endpoint, "_is_jsonrpc_entrypoint"):
@@ -179,18 +178,8 @@ class JsonRpcRoute(APIRoute):
         # return app
         async def custom_route_handler(request: Request) -> Response:
             """
-            このハンドラにリクエストが届くケースは次の通り。
-            1. [direct]jsonrpcのエントリポイント経由でmethodのエンドポイントにリクエストが投げられた
-            2. [indirect]methodのエンドポイントに直接リクエストが投げられた
-            3. [indirect]jsonrpcのエントリポイント経由でmethodのエンドポイントにリクエストが投げられた、
-               かつ、httpレスポンスでなく直接結果を受け取りたい（ローカルリクエスト）
-            """
-
-            """
-            レスポンスが作成されると次のようにレスポンスを送信する。
-            await response(scope, receive, send)
-
-            responseとsendを独自クラスにだましてやればいい
+            is_direct=True : not via jsonrpc
+            is_direct=False: via jsonrpc
             """
 
             request = JsonRpcRequest(request)
