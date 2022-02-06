@@ -27,13 +27,8 @@ def create_mock(receive_val) -> JsonRpcWebSocket:
     assert isinstance(receive_val, (str, bytes))
 
     app, router = _sample_app_router()
-
-    scope = {"type": "websocket"}
-    mock = JsonRpcWebSocket(scope, None, None)  # type: ignore
-    mock._set_entrypoint_path(app=_sample_app(), entrypoint_path="/")
-
-    # scope = {"type": "websocket", "app": app, "router": app.router}
-    # mock = JsonRpcWebSocket(scope, None, None, router)
+    scope = {"type": "websocket", "app": app, "router": app.router}
+    mock = JsonRpcWebSocket(scope, None, None, router)
     mock.receive_text = lambda: future(receive_val)  # type: ignore
     mock.send_text = lambda val: future(None)  # type: ignore
     return mock
