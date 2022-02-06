@@ -92,16 +92,13 @@ class LocalClient:
         }
         return scope
 
-    async def call_in_context(self, method: str, url: str, **kwargs) -> List[Message]:
-        request = self._create_request(method, url, kwargs)
-        scope = self._create_scope(request)
-        scope.update(self.scope)  # 現在のscopeを継承する
-        return []
-
     async def call(self, method: str, url: str, **kwargs) -> List[Message]:
         request = self._create_request(method, url, kwargs)
         scope = self._create_scope(request)
+        # scope.update(self._context)
+        return await self._call(request, scope)
 
+    async def _call(self, request, scope):
         async def execute():
             result = []
 
