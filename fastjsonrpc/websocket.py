@@ -3,6 +3,7 @@ from typing import Union
 
 from starlette.websockets import WebSocket
 
+from fastjsonrpc.localclient import LocalClient, StateLocalClient
 from fastjsonrpc.schemas import RpcResponse, RpcResponseError
 
 config = {
@@ -16,20 +17,19 @@ class JsonRpcWebSocket(WebSocket):
     CLOSE_ON_ERROR: bool = True
 
     @staticmethod
-    def get_websocket(self: "JsonRpcRouter", websocket: WebSocket, contexable=False):
-        state = websocket.state
+    def get_websocket(self: "JsonRpcRouter", websocket: WebSocket, use_state=False):
         return JsonRpcWebSocket(
-            websocket.scope, websocket.receive, websocket.send, self, contexable
+            websocket.scope, websocket.receive, websocket.send, self, use_state
         )
 
-    def __init__(self, scope, receive, send, rpc_router, contextable=False) -> None:
+    def __init__(self, scope, receive, send, rpc_router, use_state=False) -> None:
         super().__init__(scope, receive, send)
 
-        from fastjsonrpc.localclient import LocalClient
-
         self.entrypoint = self._analize_entrypoint_path(scope, rpc_router)
-        # self.dispacher = LocalClient(scope["app"], scope, contextable=True)
-        self.dispacher = LocalClient(scope["app"])
+        if use_state:
+            self.dispacher = StateLocalClient(scope)
+        else:
+            self.dispacher = LocalClient(scope)
 
     @classmethod
     def _analize_entrypoint_path(cls, scope, rpc_router):

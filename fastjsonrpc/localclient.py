@@ -1,7 +1,8 @@
-from typing import List, Optional, Set
+from typing import List, Set
 
 import requests
 from requests import PreparedRequest
+from starlette.datastructures import Headers
 from starlette.types import Message
 
 
@@ -13,29 +14,26 @@ def include_keys(dic: dict, keys: Set[str] = set()):
     return copied
 
 
-def exclude_keys(dic: dict, keys: Set[str] = set()):
-    copied = dic.copy()
-    for key in keys:
-        dic.pop(key, None)
-    return copied
-
-
-class LocalClient:
+class StateLocalClient:
     """Call ASGI application without going through ASGI application server."""
-
-    def __init__(self, asgi, scope=None, send=None, receive=None):
-        self.app = asgi
-        self.scope = self._init_scope(scope)
-        self.send = send
-        self.receive = receive
 
     @classmethod
     def from_asgi(cls, asgi):
-        return cls(asgi)
+        scope = {"app": asgi}
+        return cls(scope, None, None)
 
-    @classmethod
-    def from_scope(cls, scope, send, receive):
-        return cls(scope["app"], scope, send, receive)
+    def __init__(
+        self, scope=None, send=None, receive=None, includes={"headers", "state"}
+    ):
+        self.__pre_init__(scope)
+        self.app = scope["app"]
+        self.send = send
+        self.receive = receive
+
+        self._scope = include_keys(scope, includes)
+
+    def __pre_init__(self, scope):
+        scope.setdefault("state", {})
 
     # def create_scope(self):
 
@@ -60,15 +58,6 @@ class LocalClient:
     #         ],
     #     }
 
-    @staticmethod
-    def _init_scope(scope: Optional[dict] = None):
-        # cookiesはheadersに設定されている
-        if scope is not None:
-            copied = include_keys(scope, {"headers", "state"})
-            return copied
-        else:
-            return {"headers": [], "state": {}}
-
     def _create_request(self, method: str, url: str, kwargs):
         if not url.startswith("/"):
             raise ValueError("Must be first /.")
@@ -78,24 +67,35 @@ class LocalClient:
         request = req.prepare()
         return request
 
-    def _create_scope(self, request: PreparedRequest):
+    @classmethod
+    def _create_scope(cls, request: PreparedRequest):
         import urllib.parse
 
         parsed_url = urllib.parse.urlparse(request.path_url)
         scope: dict = {
             "type": "http",
-            "headers": [],
             "method": request.method,
             "path": parsed_url.path,
             "query_string": parsed_url.query,
             "scheme": parsed_url.scheme,
+            "headers": cls._create_headers(request),
         }
         return scope
+
+    @classmethod
+    def _create_headers(cls, request: PreparedRequest):
+        try:
+            del request.headers["content-length"]
+        except:
+            ...
+
+        headers = Headers(request.headers)
+        return headers._list
 
     async def call(self, method: str, url: str, **kwargs) -> List[Message]:
         request = self._create_request(method, url, kwargs)
         scope = self._create_scope(request)
-        # scope.update(self._context)
+        scope.update(self._scope)
         return await self._call(request, scope)
 
     async def _call(self, request, scope):
@@ -117,3 +117,13 @@ class LocalClient:
 
         res = await execute()
         return res
+
+
+class LocalClient(StateLocalClient):
+    """Call ASGI application without going through ASGI application server."""
+
+    def __init__(self, scope=None, send=None, receive=None, includes=set()):
+        super().__init__(scope, send, receive, includes)
+
+    def __pre_init__(self, scope):
+        ...

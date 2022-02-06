@@ -145,16 +145,6 @@ def test_request():
     async def websocket_endpoint(
         websocket: JsonRpcWebSocket = Depends(rpc.get_websocket),
     ):
-        # TODO: websocketインスタンスがstarlette.websocketになっている
-        # TODO: routerがfastapiデフォルトルータになっている
-        {
-            "type": "websocket",
-            "schema": "ws",
-            "router": "fastapi.routing.APIRouter",
-            "path": "/jsonrpc/ws",
-            "root_path": "",
-        }
-
         await websocket.accept()
         await websocket.send_json({"msg": "Hello WebSocket"})
         res = await websocket.receive_rpc_response()
@@ -247,6 +237,11 @@ def test_websocket_publish():
         assert data == {"jsonrpc": "2.0", "result": "hello", "id": 1}
         data = websocket.receive_json()
         assert data == {"jsonrpc": "2.0", "result": "hello", "id": 2}
+
+
+def test_websocket_state():
+    # TODO: implement
+    ...
 
 
 """
