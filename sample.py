@@ -45,15 +45,15 @@ class CountUp(BaseModel):
 @rpc.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     global rpc
-    rpc = rpc.get_websocket(websocket)
-    rpc.state.count = 0
+    client = rpc.get_websocket(websocket, use_state=True)
+    client.state.count = 0
     await websocket.accept()
 
     while True:
         import asyncio
 
         while True:
-            res = await rpc.post(
+            res = await client.post(
                 {
                     "jsonrpc": "2.0",
                     "method": "count_up",
