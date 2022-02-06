@@ -285,12 +285,6 @@ class JsonRpcRouter(PostOnlyRouter):
 
     get_websocket = JsonRpcWebSocket.get_websocket
 
-    # def get_websocket(self, websocket: WebSocket, contexable=False) -> JsonRpcWebSocket:
-    #     state = websocket.state
-    #     return JsonRpcWebSocket(
-    #         websocket.scope, websocket.receive, websocket.send, self, contexable
-    #     )
-
 
 def get_snake_case_converter():
     import re

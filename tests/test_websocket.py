@@ -126,21 +126,6 @@ async def test_receive_jsonrpc_error():
     )
 
 
-# def test_copy_scope():
-#     scope = {
-#         "root_path": None,
-#         "path": None,
-#         "raw_path": None,
-#         "path_params": None,
-#         "test": "a",
-#     }
-
-#     result = JsonRpcWebSocket.copy_scope(scope)
-#     assert len(result) == 2
-#     assert result["type"] == "http"
-#     assert result["test"] == "a"
-
-
 def test_request():
     from fastapi import Depends, FastAPI
     from pydantic import BaseModel
