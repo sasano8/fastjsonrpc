@@ -1,7 +1,7 @@
 from functools import wraps
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
@@ -65,7 +65,7 @@ def ERR(id, code, message, data):
     }
 
 
-def _sample_app():
+def _sample_app_router():
     api = JsonRpcRouter()
 
     @api.post()
@@ -91,8 +91,20 @@ def _sample_app():
 
             raise RpcError(self.msg)
 
+    @api.post()
+    class UpdateState(BaseModel):
+        def __call__(self, req: Request):
+            count = req.state._state.getdefault("countup", 0)
+            req.state.countup += count
+            return req.state.countup
+
     app = FastAPI()
     app.include_router(api)
+    return app, api
+
+
+def _sample_app():
+    app, api = _sample_app_router()
     return app
 
 

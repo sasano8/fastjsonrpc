@@ -283,28 +283,7 @@ class JsonRpcRouter(PostOnlyRouter):
 
         return wrapper
 
-    def filter_entrypoint(self, router):
-        entrypoint = self.routes[0]
-
-        def filter_jsonrpc_router(route):
-            return entrypoint.__class__ is route.__class__
-
-        return list(filter(filter_jsonrpc_router, router.routes))
-
-    def get_websocket(self, websocket: WebSocket):
-        entrypoint = self.filter_entrypoint(websocket["router"])[0]
-        path = entrypoint.path.split("/")[1:-1]
-        entrypoint_path = "/" + "/".join(path) + "/"
-
-        ws = JsonRpcWebSocket(websocket.scope, websocket.receive, websocket.send)
-        ws._set_entrypoint_path(websocket.scope["app"], entrypoint_path)
-        return ws
-
-
-# if TYPE_CHECKING:
-
-#     class JsonRpcRouter(APIRouter):  # type: ignore
-#         ...
+    get_websocket = JsonRpcWebSocket.get_websocket
 
 
 def get_snake_case_converter():

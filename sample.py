@@ -4,30 +4,9 @@ from fastapi import Depends, FastAPI, Request, WebSocket
 from pydantic import BaseModel
 
 from fastjsonrpc import JsonRpcRouter, RpcError
+from fastjsonrpc.router import JsonRpcWebSocket
 
 rpc = JsonRpcRouter()
-
-
-@rpc.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    while True:
-        import asyncio
-
-        global rpc
-        rpc = rpc.get_websocket(websocket)
-
-        while True:
-            res = await rpc.post(
-                {
-                    "jsonrpc": "2.0",
-                    "method": "echo",
-                    "params": {"msg": "hello"},
-                    "id": 0,
-                }
-            )
-            await websocket.send_json(res)
-            await asyncio.sleep(1)
 
 
 def get_suffix():
@@ -54,6 +33,36 @@ class Error(BaseModel):
 class Empty(BaseModel):
     def __call__(self):
         return ""
+
+
+@rpc.post()
+class CountUp(BaseModel):
+    def __call__(self, request: Request):
+        request.state.count += 1
+        return request.state.count
+
+
+@rpc.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    global rpc
+    rpc = rpc.get_websocket(websocket)
+    rpc.state.count = 0
+    await websocket.accept()
+
+    while True:
+        import asyncio
+
+        while True:
+            res = await rpc.post(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "count_up",
+                    # "params": {"msg": "hello"},
+                    "id": 0,
+                }
+            )
+            await websocket.send_json(res)
+            await asyncio.sleep(1)
 
 
 class YourAppError(RpcError):

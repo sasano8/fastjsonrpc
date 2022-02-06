@@ -12,7 +12,7 @@ from fastjsonrpc.exceptions import (
     RpcError,
 )
 from fastjsonrpc.websocket import JsonRpcWebSocket
-from tests import ERR, IGNORE, OK, REQ, _sample_app, as_async
+from tests import ERR, IGNORE, OK, REQ, _sample_app, _sample_app_router, as_async
 
 
 def create_mock(receive_val) -> JsonRpcWebSocket:
@@ -26,9 +26,9 @@ def create_mock(receive_val) -> JsonRpcWebSocket:
 
     assert isinstance(receive_val, (str, bytes))
 
-    scope = {"type": "websocket"}
-    mock = JsonRpcWebSocket(scope, None, None)  # type: ignore
-    mock._set_entrypoint_path(app=_sample_app(), entrypoint_path="/")
+    app, router = _sample_app_router()
+    scope = {"type": "websocket", "app": app, "router": app.router}
+    mock = JsonRpcWebSocket(scope, None, None, router)
     mock.receive_text = lambda: future(receive_val)  # type: ignore
     mock.send_text = lambda val: future(None)  # type: ignore
     return mock
@@ -124,21 +124,6 @@ async def test_receive_jsonrpc_error():
         message=MethodNotFoundError.message,
         data=IGNORE,
     )
-
-
-def test_copy_scope():
-    scope = {
-        "root_path": None,
-        "path": None,
-        "raw_path": None,
-        "path_params": None,
-        "test": "a",
-    }
-
-    result = JsonRpcWebSocket.copy_scope(scope)
-    assert len(result) == 2
-    assert result["type"] == "http"
-    assert result["test"] == "a"
 
 
 def test_request():
@@ -254,10 +239,10 @@ def test_websocket_publish():
     client = TestClient(app)
     with client.websocket_connect("/jsonrpc/ws") as websocket:
         websocket.send_json(
-            {"jsonrpc": "2.0", "method": "echo", "params": {"msg": "send"}, "id": 0}
+            {"jsonrpc": "2.0", "method": "echo", "params": {"msg": "send"}, "id": -1}
         )
         data = websocket.receive_json()
-        assert data == {"jsonrpc": "2.0", "result": "send", "id": 0}
+        assert data == {"jsonrpc": "2.0", "result": "send", "id": -1}
         data = websocket.receive_json()
         assert data == {"jsonrpc": "2.0", "result": "hello", "id": 1}
         data = websocket.receive_json()
